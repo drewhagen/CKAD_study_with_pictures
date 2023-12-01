@@ -71,9 +71,11 @@ The CLI tool used to deploy and manage applications on the Kubernetes cluster, t
 5. **Docker Engine:** More than just a container runtime, Docker Engine offers a comprehensive suite including a robust CLI, API, image building tools, volume management, and security features.
    
 6. **Dockershim Removal in Kubernetes 1.24:** Kubernetes version 1.24 saw the removal of Dockershim, transitioning towards direct integration with CRI-compliant container runtimes, eliminating the need for intermediary components like Dockershim.
+   
+7. See [CLI alternatives to Docker for Containerd](Containerd%20Alternatives%20to%20Docker.md)
 
 ![image](images/pod.png)
-> The image provides a clear and relatable visual analogy for a Pod in Kubernetes, depicting it as a shared living space where different characters (containers) utilize common resources, effectively conveying the concept of shared resources within a pod.
+> The image provides a clear visual analogy for a Pod in Kubernetes, depicting it as a shared living space where different characters (containers) utilize common resources, effectively conveying the concept of shared resources within a pod.
 ### Pods
 A pod in Kubernetes is the smallest deployable unit, encapsulating one or more containers.
 
@@ -129,6 +131,9 @@ spec:
 ```
 #### Using kubectl to create a pod with this spec
 `kubectl create -f pod-definition.yml` - create pod from the YAML file
+
+##### Note - This is the Declarative approach.
+Creating pods from YAML is also known as ***Declaratively*** creating a pod, given that you're declaring the pod in code.
 
 ### Using kubectl to inspect pods after making them
 
@@ -231,7 +236,7 @@ Can only edit the following fields:
 - spec.terminationGracePeriodSeconds
 
 ![image](images/replicaset.png)
-> The image provides a visual analogy for a ReplicaSet in Kubernetes, representing it as a fleet of lifeboats to symbolize high availability, redundancy, load balancing, and scalability in maintaining continuous application access within a Kubernetes cluster.
+> The image provides a visual analogy for a ReplicaSet in Kubernetes, representing it as a fleet of lifeboats shipping application containers. This symbolizes the high availability, redundancy, load balancing, and scalability in maintaining continuous application access within a Kubernetes cluster.
 ### ReplicaSet
 ##### Problem Statement
 If one pod runs our application and that pod or app fails, users will no longer be able to access our application... unless we have redundancy.
@@ -317,7 +322,7 @@ Or by targeting the resource in the cluster by its kind and name:
 
 
 ![image](images/labels_selectors.png)
-> The image created offers a visual representation of Labels and Selectors in Kubernetes, using a puzzle game analogy to illustrate the relationship between Pods and ReplicaSets, emphasizing the matching of labels with selectors for effective pod management.
+> The image created offers a visual representation of Labels and Selectors in Kubernetes, using a puzzle game analogy to illustrate the relationship between Pods and ReplicaSets. This emphasizes the matching of labels with selectors for effective pod management.
 ### Labels and Selectors
 ReplicaSets depend on selectors to know which Pods to monitor, based on the Pod's labels. You must set up a selector in the ReplicaSet and match it with the labels in the Pod spec, even though you already define pod spec inline within the ReplicaSet.
 ```
@@ -373,8 +378,28 @@ Kubernetes automatically creates a `default` namespace.
 ###### *! REMEMBER*
 If you don't specify a namespace to your `kubectl` commands, your actions will scope into this namespace.
 
+`kubectl get pods`
+```
+NAME   READY   STATUS   RESTARTS   AGE
+pod1   1/1     Running  0          3d
+pod2   1/1     Running  0          3d 
+```
+
 ##### `kube-system` Namespace
 Kubernetes creates a set of pods and services for its internal functioning and puts this under the `kube-system` namespace.
+`kubectl get pods -n kube-system`
+```
+NAME                                     READY   STATUS    RESTARTS      AGE
+coredns-5d78c9869d-h4v5b                 1/1     Running   2 (58s ago)   76d
+coredns-5d78c9869d-wfkhp                 1/1     Running   2 (58s ago)   76d
+etcd-docker-desktop                      1/1     Running   2 (58s ago)   76d
+kube-apiserver-docker-desktop            1/1     Running   2 (58s ago)   76d
+kube-controller-manager-docker-desktop   1/1     Running   2 (58s ago)   76d
+kube-proxy-sgdsd                         1/1     Running   2 (58s ago)   76d
+kube-scheduler-docker-desktop            1/1     Running   2 (58s ago)   76d
+storage-provisioner                      1/1     Running   4 (19s ago)   76d
+vpnkit-controller                        1/1     Running   2 (58s ago)   76d
+```
 
 ##### `kube-public` Namespace
 Resources available to all users should go here.
@@ -391,9 +416,128 @@ The resources will be isolated between these. This way, if a resource in the dev
 ##### Scoped Policies
 Each namespace can have its own unique policies. You can also assign resource limit quotas for a namespace so that a namespace is guaranteed a certain amount and does not use above its allowed limited.
 
-#### DNS
-If connecting a resource to another resource in the cluster, you can use a short hand for it's DNS name, for example:
-`database-service`
+#### DNS, Namespaces and referring to Services
+
+In Kubernetes, services and deployments are organized within namespaces, which act as virtual clusters within a physical cluster. Consider the following example for the `default` namespace:
+
+```
+Namespace: default
+------------------
+Pod: webapp
+Service: database-service
+Deployment: web-deployment
+```
+
+When connecting to a service within the same namespace (`default` in this case), you can use the service's simple name. For example, to connect to `database-service` from within the same namespace, you would use:
+
+`sql.connect('database-service')`
+
+This simplicity stems from the fact that Kubernetes DNS automatically resolves the service name to its cluster IP within the same namespace.
+
+However, if you need to connect to a service in a different namespace, a more detailed address is required. Consider another namespace `dev`:
+
+```
+Namespace: dev
+-------------
+Pod: webapp
+Service: database-service
+Deployment: web-deployment
+```
+``
+
+To connect to `database-service` in the `dev` namespace from another namespace, you need to specify the full DNS name, which follows the pattern: `[ServiceName].[Namespace].svc.cluster.local`. Thus, the connection string becomes:
+
+`sql.connect('database-service.dev.svc.cluster.local')`
+
+In this format:
+
+- `database-service` is the name of the service.
+- `dev` is the namespace where the service resides.
+- `svc` is a constant that stands for the Kubernetes Service resource.
+- `cluster.local` is the default domain name for Kubernetes clusters.
+
+This extended format ensures accurate DNS resolution across namespaces, facilitating communication between services in different virtual clusters within the Kubernetes environment.
+
+#### Using kubectl to create a pod in a specific namespace
+Just like the listing commands, the create command creates pods in the `default` namespace.
+`kubectl create -f pod-definition.yml`
+
+To target creating a pod in specific namespace, use the `--namespace` flag like so:
+`kubectl create -f pod-definition.yml --namespace=dev`
+
+#### Using YAML definition to create a pod in a specific namespace
+The naemspace can also be declared in the metadata dictionary of the manifest:
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: myapp-pod
+  namespace: dev # declaring the namespace here
+  labels:
+    app: myapp
+    type: front-end
+spec:
+  containers: 
+    - name: nginx-container
+	  image: nginx
+	- name: backend-container
+	  image: redis
+```
+
+### Creating a new Namespace declaratively in YAML
+`namespace-dev.yaml`
+```
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
+```
+Then run:
+`kubectl create -f namespace-dev.yml`
+### Creating a new Namespace imperatively using only kubectl
+`kubectl create namespace dev`
+
+### Switch the default namespace
+If we want to be able to target another namespace than the `default` one when the `--namespace` is not specified, we can do so by switching the namespace on the context in our kubeconfig:
+
+`kubectl config set-context $(kubectl config current-context) --namespace=dev`
+
+### View resources in all Namespaces
+Simply:
+`kubectl get pods --all-namespaces`
+
+### Limiting Resources in a Namespace
+To limit resources in a namespace, one must create a Resource Quota.
+`example-quota.yaml`
+```
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: example-quota
+  namespace: dev
+spec:
+  hard:
+    requests.cpu: "1"             # Maximum total CPU requests sum in this namespace
+    requests.memory: 2Gi          # Maximum total memory requests sum in this namespace
+    limits.cpu: "2"               # Maximum total CPU limits sum in this namespace
+    limits.memory: 4Gi            # Maximum total memory limits sum in this namespace
+    pods: "10"                    # Maximum number of pods in the namespace
+    services: "5"                 # Maximum number of services
+    replicationcontrollers: "5"   # Maximum number of replication controllers
+    secrets: "10"                 # Maximum number of secrets
+    configmaps: "10"              # Maximum number of configmaps
+    persistentvolumeclaims: "4"   # Maximum number of persistent volume claims
+
+```
+
+### Imperative Commands
+See [the dedicated document for Imperative Commands](Imperative%20Commands.md)
+
+
+
+
+
+
 
 
 
